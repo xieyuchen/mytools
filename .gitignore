@@ -1,1 +1,18 @@
-*.class
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Node (如果后续引入构建工具)
+node_modules/
+dist/
+.cache/
+
+# Logs
+*.log
