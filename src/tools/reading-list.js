@@ -218,8 +218,8 @@ ToolRegistry.register({
         syncArea.innerHTML = `
           <p class="rl-sync-hint">通过 GitHub Gist 跨设备同步你的阅读列表。</p>
           <div class="rl-add-form">
-            <input type="password" id="rl-token-input" placeholder="GitHub Personal Access Token" />
-            <input type="text" id="rl-gist-id-input" placeholder="Gist ID（留空则自动创建）" />
+            <input type="text" id="rl-token-input" autocomplete="off" placeholder="GitHub Personal Access Token" />
+            <input type="text" id="rl-gist-id-input" autocomplete="off" placeholder="Gist ID（留空则自动创建）" />
             <button class="btn btn-primary" id="rl-connect-btn">连接</button>
           </div>
           <div id="rl-sync-msg" style="margin-top:8px"></div>
@@ -234,17 +234,20 @@ ToolRegistry.register({
           </details>
         `;
 
+        const tokenInput = syncArea.querySelector('#rl-token-input');
+        const gistIdInput = syncArea.querySelector('#rl-gist-id-input');
+        const connectMsgEl = syncArea.querySelector('#rl-sync-msg');
+
         syncArea.querySelector('#rl-connect-btn').addEventListener('click', async () => {
-          const token = syncArea.querySelector('#rl-token-input').value.trim();
-          const gistId = syncArea.querySelector('#rl-gist-id-input').value.trim();
-          const msgEl = syncArea.querySelector('#rl-sync-msg');
+          const token = tokenInput.value.trim();
+          const gistId = gistIdInput.value.trim();
 
           if (!token) {
-            msgEl.innerHTML = '<p class="error-msg">请输入 Token</p>';
+            connectMsgEl.innerHTML = '<p class="error-msg">请输入 Token</p>';
             return;
           }
 
-          msgEl.innerHTML = '<p class="rl-sync-loading">验证中...</p>';
+          connectMsgEl.innerHTML = '<p class="rl-sync-loading">验证中...</p>';
 
           try {
             // Verify token
@@ -253,7 +256,7 @@ ToolRegistry.register({
             let finalGistId = gistId;
             if (!finalGistId) {
               // Create new gist
-              msgEl.innerHTML = '<p class="rl-sync-loading">创建 Gist...</p>';
+              connectMsgEl.innerHTML = '<p class="rl-sync-loading">创建 Gist...</p>';
               finalGistId = await self._createGist(token);
             } else {
               // Verify gist exists
@@ -270,7 +273,7 @@ ToolRegistry.register({
               renderSyncUI();
             }
           } catch (e) {
-            msgEl.innerHTML = `<p class="error-msg">连接失败: ${e.message}</p>`;
+            connectMsgEl.innerHTML = `<p class="error-msg">连接失败: ${e.message}</p>`;
           }
         });
       }
