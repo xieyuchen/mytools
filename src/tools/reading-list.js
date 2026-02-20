@@ -44,18 +44,26 @@ ToolRegistry.register({
   },
 
   async _gistRequest(method, path, token, body) {
-    const res = await fetch(`https://api.github.com${path}`, {
-      method,
-      headers: {
-        Authorization: `token ${token}`,
-        Accept: 'application/vnd.github.v3+json',
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
-      },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    });
+    let res;
+    try {
+      res = await fetch(`https://api.github.com${path}`, {
+        method,
+        headers: {
+          Authorization: `token ${token}`,
+          Accept: 'application/vnd.github.v3+json',
+          ...(body ? { 'Content-Type': 'application/json' } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    } catch (e) {
+      throw new Error('网络请求失败，请检查网络连接');
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || `HTTP ${res.status}`);
+      if (res.status === 401) throw new Error('Token 无效或已过期');
+      if (res.status === 403) throw new Error('Token 权限不足，请确认勾选了 gist 权限（需使用 classic token）');
+      if (res.status === 404) throw new Error('Gist 不存在，请检查 ID');
+      throw new Error(err.message || `GitHub API 错误 (HTTP ${res.status})`);
     }
     return res.json();
   },
@@ -253,14 +261,14 @@ ToolRegistry.register({
             }
 
             self._saveSyncConfig({ token, gistId: finalGistId, lastSync: Date.now() });
-            msgEl.innerHTML = '<p class="success-msg">连接成功！</p>';
 
-            // Auto sync after connect
+            // Auto sync after connect (if user provided an existing gist)
             if (gistId) {
+              renderSyncUI();
               await doSync('merge');
+            } else {
+              renderSyncUI();
             }
-
-            renderSyncUI();
           } catch (e) {
             msgEl.innerHTML = `<p class="error-msg">连接失败: ${e.message}</p>`;
           }
@@ -274,17 +282,21 @@ ToolRegistry.register({
       const config = self._getSyncConfig();
       const msgEl = syncArea.querySelector('#rl-sync-msg');
       const syncBtn = syncArea.querySelector('#rl-sync-btn');
+      const pushBtn = syncArea.querySelector('#rl-push-btn');
+      const pullBtn = syncArea.querySelector('#rl-pull-btn');
       if (syncBtn) syncBtn.disabled = true;
-      msgEl.innerHTML = '<p class="rl-sync-loading">同步中...</p>';
+      if (pushBtn) pushBtn.disabled = true;
+      if (pullBtn) pullBtn.disabled = true;
+      if (msgEl) msgEl.innerHTML = '<p class="rl-sync-loading">同步中...</p>';
 
       try {
         if (mode === 'push') {
           await self._pushToGist(config.token, config.gistId);
-          msgEl.innerHTML = '<p class="success-msg">已上传到 Gist</p>';
+          if (msgEl) msgEl.innerHTML = '<p class="success-msg">已上传到 Gist</p>';
         } else if (mode === 'pull') {
           const remote = await self._pullFromGist(config.token, config.gistId);
           self._save(remote);
-          msgEl.innerHTML = '<p class="success-msg">已从 Gist 下载</p>';
+          if (msgEl) msgEl.innerHTML = '<p class="success-msg">已从 Gist 下载</p>';
         } else {
           // merge
           const remote = await self._pullFromGist(config.token, config.gistId);
@@ -292,18 +304,22 @@ ToolRegistry.register({
           const merged = self._mergeItems(local, remote);
           self._save(merged);
           await self._pushToGist(config.token, config.gistId);
-          msgEl.innerHTML = '<p class="success-msg">同步完成</p>';
+          if (msgEl) msgEl.innerHTML = '<p class="success-msg">同步完成</p>';
         }
         config.lastSync = Date.now();
         self._saveSyncConfig(config);
         renderFilters();
         renderList();
-        renderSyncUI();
+        // Update sync time without full re-render (to preserve msgEl)
+        const timeEl = syncArea.querySelector('.rl-sync-time');
+        if (timeEl) timeEl.textContent = '上次同步: ' + self._formatDate(config.lastSync);
       } catch (e) {
-        msgEl.innerHTML = `<p class="error-msg">同步失败: ${e.message}</p>`;
+        if (msgEl) msgEl.innerHTML = `<p class="error-msg">同步失败: ${e.message}</p>`;
       } finally {
         syncing = false;
         if (syncBtn) syncBtn.disabled = false;
+        if (pushBtn) pushBtn.disabled = false;
+        if (pullBtn) pullBtn.disabled = false;
       }
     }
 
@@ -461,15 +477,6 @@ ToolRegistry.register({
 
       renderFilters();
       renderList();
-    });
-
-    // Enter key to add
-    [titleInput, urlInput, tagsInput].forEach((input) => {
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          container.querySelector('#rl-add-btn').click();
-        }
-      });
     });
 
     // Initial render
