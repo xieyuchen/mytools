@@ -13,7 +13,7 @@ class App {
   static async registerSW() {
     if ('serviceWorker' in navigator) {
       try {
-        await navigator.serviceWorker.register('/public/sw.js');
+        await navigator.serviceWorker.register('./public/sw.js');
       } catch (e) {
         console.log('SW registration skipped:', e.message);
       }
