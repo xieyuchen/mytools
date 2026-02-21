@@ -188,7 +188,7 @@ ToolRegistry.register({
           <div class="rl-sync-status">
             <span class="rl-sync-dot connected"></span>
             <span>已连接 Gist</span>
-            <span class="rl-sync-id">${config.gistId.slice(0, 8)}...</span>
+            <span class="rl-sync-id" id="rl-gist-id-display" title="点击复制">${config.gistId}</span>
           </div>
           ${config.lastSync ? `<div class="rl-sync-time">上次同步: ${self._formatDate(config.lastSync)}</div>` : ''}
           <div class="btn-group" style="margin-top:12px">
@@ -200,6 +200,14 @@ ToolRegistry.register({
           <div id="rl-sync-msg" style="margin-top:8px"></div>
         `;
 
+        syncArea.querySelector('#rl-gist-id-display').addEventListener('click', () => {
+          navigator.clipboard.writeText(config.gistId).then(() => {
+            const el = syncArea.querySelector('#rl-gist-id-display');
+            const original = el.textContent;
+            el.textContent = '已复制!';
+            setTimeout(() => { el.textContent = original; }, 1500);
+          });
+        });
         syncArea.querySelector('#rl-sync-btn').addEventListener('click', async () => {
           await doSync('merge');
         });

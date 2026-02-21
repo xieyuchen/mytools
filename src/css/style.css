@@ -608,6 +608,13 @@ a.rl-item-title:hover {
   background: var(--color-bg);
   padding: 2px 8px;
   border-radius: 4px;
+  cursor: pointer;
+  word-break: break-all;
+  user-select: all;
+}
+
+.rl-sync-id:hover {
+  color: var(--color-primary);
 }
 
 .rl-sync-time {
