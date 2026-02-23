@@ -154,15 +154,20 @@ ToolRegistry.register({
 
   _extractTextFromHTML(html) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
-    // Remove scripts and styles
-    doc.querySelectorAll('script, style, nav, footer, header, aside').forEach((el) => el.remove());
+    // Extract meta info (free, no API needed)
     const title = doc.querySelector('title')?.textContent?.trim() || '';
-    // Get main content: prefer article/main, fallback to body
+    const metaDesc =
+      doc.querySelector('meta[name="description"]')?.getAttribute('content')?.trim() ||
+      doc.querySelector('meta[property="og:description"]')?.getAttribute('content')?.trim() ||
+      '';
+    const ogTitle =
+      doc.querySelector('meta[property="og:title"]')?.getAttribute('content')?.trim() || '';
+    // Remove scripts and styles for body text extraction
+    doc.querySelectorAll('script, style, nav, footer, header, aside').forEach((el) => el.remove());
     const main = doc.querySelector('article') || doc.querySelector('main') || doc.body;
     let text = main?.innerText || main?.textContent || '';
-    // Truncate to ~4000 chars to stay within LLM context limits
     text = text.replace(/\s+/g, ' ').trim().slice(0, 4000);
-    return { title, text };
+    return { title: ogTitle || title, metaDesc, text };
   },
 
   async _callLLM(pageTitle, pageText, url) {
@@ -210,33 +215,47 @@ ${pageText}
   },
 
   async _enrichItem(itemId, renderList, renderFilters) {
-    const config = this._getLLMConfig();
-    if (!config.apiKey || !config.endpoint) return;
-
     const items = this._load();
     const item = items.find((i) => i.id === itemId);
     if (!item || !item.url || item.enriched) return;
 
     try {
-      // Mark as enriching
       item.enriching = true;
       this._save(items);
       renderList();
 
       const html = await this._fetchPageContent(item.url);
-      const { title: pageTitle, text: pageText } = this._extractTextFromHTML(html);
-      const result = await this._callLLM(pageTitle, pageText, item.url);
+      const { title: pageTitle, metaDesc, text: pageText } = this._extractTextFromHTML(html);
 
       // Re-load to avoid overwriting concurrent changes
       const freshItems = this._load();
       const freshItem = freshItems.find((i) => i.id === itemId);
       if (!freshItem) return;
 
-      // Only overwrite title if the original was just a URL
-      if (this._isURL(freshItem.title) && result.title) {
-        freshItem.title = result.title;
+      // Step 1: Always apply HTML-extracted title (free, no API)
+      if (this._isURL(freshItem.title) && pageTitle) {
+        freshItem.title = pageTitle;
       }
-      freshItem.summary = result.summary || '';
+
+      // Step 2: Try LLM for Chinese summary, fallback to meta description
+      const llmConfig = this._getLLMConfig();
+      if (llmConfig.apiKey && llmConfig.endpoint) {
+        try {
+          const result = await this._callLLM(pageTitle, pageText, item.url);
+          if (result.title && this._isURL(freshItem.title)) {
+            freshItem.title = result.title;
+          }
+          freshItem.summary = result.summary || metaDesc;
+        } catch (llmErr) {
+          // LLM failed, fall back to meta description
+          freshItem.summary = metaDesc;
+          if (!metaDesc) freshItem.enrichError = 'AI 摘要失败: ' + llmErr.message;
+        }
+      } else {
+        // No LLM configured, use meta description
+        freshItem.summary = metaDesc;
+      }
+
       freshItem.enriched = true;
       delete freshItem.enriching;
       freshItem.updatedAt = Date.now();
@@ -244,12 +263,11 @@ ${pageText}
       renderFilters();
       renderList();
     } catch (e) {
-      // Remove enriching flag on failure
       const freshItems = this._load();
       const freshItem = freshItems.find((i) => i.id === itemId);
       if (freshItem) {
         delete freshItem.enriching;
-        freshItem.enrichError = e.message;
+        freshItem.enrichError = '页面获取失败: ' + e.message;
         this._save(freshItems);
         renderList();
       }
@@ -305,7 +323,7 @@ ${pageText}
       <div class="card">
         <div class="card-title">设置</div>
         <details id="rl-llm-settings">
-          <summary>AI 摘要（配置 LLM API 后粘贴链接自动生成标题和摘要）</summary>
+          <summary>AI 摘要（可选，不配置也能自动获取标题）</summary>
           <div class="rl-add-form" style="margin-top:12px">
             <input type="text" id="rl-llm-endpoint" autocomplete="off" placeholder="API Endpoint（如 https://api.openai.com/v1/chat/completions）" />
             <input type="text" id="rl-llm-key" autocomplete="off" placeholder="API Key" />
